@@ -2,3 +2,4 @@
 venv/
 credentials.json
 chroma_db/
+.streamlit
