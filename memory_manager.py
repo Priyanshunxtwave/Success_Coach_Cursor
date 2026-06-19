@@ -88,8 +88,7 @@ def get_student_history(student_name):
     
     try:
         # 1. Fetch Factual Profile
-        fact_response = mem0_client.get_all(filters={"user_id": f"{student_name}_facts"})
-        
+        fact_response = mem0_client.get_all(user_id=f"{student_name}_facts")
         # Safely extract the list from the "results" key (or "memories" in older package versions)
         if isinstance(fact_response, dict):
             fact_results = fact_response.get("results", fact_response.get("memories", []))
@@ -100,7 +99,7 @@ def get_student_history(student_name):
         facts_str = "\n- ".join(facts) if facts else "No recurring patterns or personal traits recorded yet."
 
         # 2. Fetch Session Summaries
-        summary_response = mem0_client.get_all(filters={"user_id": f"{student_name}_summaries"})
+        summary_response = mem0_client.get_all(user_id=f"{student_name}_summaries")
         
         if isinstance(summary_response, dict):
             summary_results = summary_response.get("results", summary_response.get("memories", []))
