@@ -5,12 +5,45 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 # Load environment variables
+
 load_dotenv()
 
 # ==========================================
 # GOOGLE SHEETS DATABASE TOOLS
 # ==========================================
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+
+from datetime import datetime
+
+def add_signal_to_db(student_name, signal_type, severity, urgency, reason):
+    """Appends a new signal to the signal_sheet in Google Sheets."""
+    try:
+        # 1. Connect to the Google Sheets service
+        service = get_sheets_service()
+        
+        # 2. Get current time
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 3. Build the row matching your columns: 
+        # student_id | signal_type | severity | urgency | reason | timestamp | actioned
+        new_row = [student_name, signal_type, severity, urgency, reason, timestamp, "FALSE"]
+        
+        # 4. Append to Google Sheets using the official API syntax
+        body = {
+            'values': [new_row]
+        }
+        
+        result = service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range="signal_sheet!A:G", # Target the signal_sheet tab
+            valueInputOption="USER_ENTERED", # Tells Google to format it normally
+            body=body
+        ).execute()
+        
+        print(f"Successfully added signal for {student_name} to database.")
+        
+    except Exception as e:
+        print(f"Error saving signal to database: {e}")
 
 def get_google_creds():
     try:

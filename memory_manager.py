@@ -3,6 +3,8 @@ import streamlit as st
 from mem0 import MemoryClient
 from openai import OpenAI
 from dotenv import load_dotenv
+import json
+from database import add_signal_to_db
 
 load_dotenv()
 
@@ -78,18 +80,66 @@ Transcript:
         mem0_client.add([{"role": "user", "content": summary_content}], user_id=f"{student_name}_summaries")
         print(f"Saved Session Summary: {summary_content}")
 
+        # ... (Right below your saved Session Summary code) ...
+
+        # 4. PROCESS SIGNAL DETECTION (M6 Feature)
+        signal_prompt = f"""Review the following coaching transcript. Is there any concerning issue regarding the student's academic performance, mental health, attendance, or general wellbeing?
+        
+        Respond ONLY with a valid JSON object using this exact structure:
+        {{
+            "has_signal": true/false,
+            "signal_type": "Academic Risk" / "Mental Health" / "Attendance" / "None",
+            "severity": "Low" / "Medium" / "High" / "Critical",
+            "urgency": "Action Today" / "Action Tomorrow" / "Monitor",
+            "reason": "1 sentence explaining the specific concern."
+        }}
+        
+        Transcript:
+        {transcript}"""
+        
+        signal_res = llm_client.chat.completions.create(
+            model="gpt-5.4-mini-2026-03-17",
+            messages=[{"role": "user", "content": signal_prompt}],
+            response_format={ "type": "json_object" } # Forces strict JSON output
+        )
+        
+        signal_data = json.loads(signal_res.choices[0].message.content)
+        
+        # If the LLM detected a concern, push it to the Google Sheet
+        if signal_data.get("has_signal") and signal_data.get("severity") != "Low":
+            add_signal_to_db(
+                student_name=student_name,
+                signal_type=signal_data["signal_type"],
+                severity=signal_data["severity"],
+                urgency=signal_data["urgency"],
+                reason=signal_data["reason"]
+            )
+            print(f"🚨 ALERT LOGGED: {signal_data['severity']} signal for {student_name}")
+
     except Exception as e:
         print(f"Memory processing failed: {e}")
 
 def get_student_history(student_name):
     """Retrieves both factual profile data and past session briefings separately."""
-    # FIX 1: Client initialized inside the function to prevent Cloud crashes
     mem0_client = MemoryClient(api_key=get_mem0_key())
     
+    # --- BULLETPROOF FETCHER ---
+    # Handles the difference between Local SDK and Cloud API syntaxes
+    def safe_get_all(target_user_id):
+        try:
+            # Try Cloud API syntax first
+            return mem0_client.get_all(user_id=target_user_id)
+        except Exception as e:
+            # If it throws the local environment error, use the filters syntax
+            if "filters=" in str(e) or "frozenset" in str(e):
+                return mem0_client.get_all(filters={"user_id": target_user_id})
+            raise e
+
     try:
         # 1. Fetch Factual Profile
-        fact_response = mem0_client.get_all(user_id=f"{student_name}_facts")
-        # Safely extract the list from the "results" key (or "memories" in older package versions)
+        fact_response = safe_get_all(f"{student_name}_facts")
+        
+        # Safely extract the list from the "results" key
         if isinstance(fact_response, dict):
             fact_results = fact_response.get("results", fact_response.get("memories", []))
         else:
@@ -99,7 +149,7 @@ def get_student_history(student_name):
         facts_str = "\n- ".join(facts) if facts else "No recurring patterns or personal traits recorded yet."
 
         # 2. Fetch Session Summaries
-        summary_response = mem0_client.get_all(user_id=f"{student_name}_summaries")
+        summary_response = safe_get_all(f"{student_name}_summaries")
         
         if isinstance(summary_response, dict):
             summary_results = summary_response.get("results", summary_response.get("memories", []))
