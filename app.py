@@ -115,8 +115,13 @@ if st.session_state.role == "student":
         ]
 
     for msg in st.session_state.chat_history:
-        if msg["role"] not in ["system", "tool"]:
-            st.chat_message(msg["role"]).write(msg["content"])
+        # Safely extract role and content whether it is a dict or an OpenAI object
+        role = msg["role"] if isinstance(msg, dict) else msg.role
+        content = msg["content"] if isinstance(msg, dict) else msg.content
+        
+        # Only draw if it's not a background system message AND it actually has text
+        if role not in ["system", "tool"] and content:
+            st.chat_message(role).write(content)
 
     # --- CHAT LOOP ---
     if user_input := st.chat_input("Ask me about your grades, attendance, or upcoming exams..."):

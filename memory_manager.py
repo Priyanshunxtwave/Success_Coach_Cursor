@@ -32,13 +32,18 @@ def save_full_session(student_name, chat_history):
     
     try:
         # 1. Build a clean transcript from the chat history
+        # 1. Build a clean transcript from the chat history
         transcript = ""
         for msg in chat_history:
-            if msg["role"] == "user":
-                transcript += f"User: {msg['content']}\n"
+            # Safely extract data
+            role = msg["role"] if isinstance(msg, dict) else msg.role
+            content = msg["content"] if isinstance(msg, dict) else msg.content
+
+            if role == "user":
+                transcript += f"User: {content}\n"
             # We only want to log text content, not raw JSON tool calls
-            elif msg["role"] == "assistant" and msg.get("content"): 
-                transcript += f"AI: {msg['content']}\n"
+            elif role == "assistant" and content: 
+                transcript += f"AI: {content}\n"
 
         # If the transcript is empty (user just logged in and clicked end), do nothing
         if not transcript.strip():
