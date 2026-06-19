@@ -23,13 +23,42 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 SPREADSHEET_ID = os.getenv('GOOGLE_SPREADSHEET_ID')
 
 
-def get_sheets_service():
-    """Authenticates and returns the Google Sheets service object."""
-    creds = service_account.Credentials.from_service_account_file(
-        'credentials.json',
+load_dotenv()
+
+def get_google_creds():
+    try:
+        # Try to pull from Streamlit Cloud Secrets first
+        if "gcp_service_account" in st.secrets:
+            return service_account.Credentials.from_service_account_info(
+                dict(st.secrets["gcp_service_account"]),
+                scopes=SCOPES
+            )
+    except Exception:
+        pass # Ignore the error if st.secrets doesn't exist locally
+        
+    # Fallback for local development
+    return service_account.Credentials.from_service_account_file(
+        "credentials.json",
         scopes=SCOPES
     )
-    return build('sheets', 'v4', credentials=creds)
+
+def get_spreadsheet_id():
+    try:
+        # Try to pull from Streamlit Cloud Secrets first
+        if "GOOGLE_SPREADSHEET_ID" in st.secrets:
+            return st.secrets["GOOGLE_SPREADSHEET_ID"]
+    except Exception:
+        pass # Ignore the error if st.secrets doesn't exist locally
+        
+    # Fallback for local development
+    return os.getenv("GOOGLE_SPREADSHEET_ID")
+
+
+SPREADSHEET_ID = get_spreadsheet_id()
+
+def get_sheets_service():
+    creds = get_google_creds()
+    return build("sheets", "v4", credentials=creds)
 
 def fetch_tab_data(service, tab_name, range_span="A1:F100"):
     """Fetches data from a specific tab."""
