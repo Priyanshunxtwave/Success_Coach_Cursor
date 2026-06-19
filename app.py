@@ -4,6 +4,7 @@ import json
 # Import logic from our custom modules
 from database import get_all_student_names, get_student_academic_data
 from ai_coach import client, tools
+from knowledge_base import search_course_material
 
 # ==========================================
 # STREAMLIT FRONTEND UI
@@ -72,21 +73,33 @@ if user_input := st.chat_input("Ask me about your grades, attendance, or upcomin
             st.session_state.chat_history.append(response_message)
             
             for tool_call in response_message.tool_calls:
+                
+                # --- TOOL 1: DATABASE LOOKUP ---
                 if tool_call.function.name == "get_student_academic_data":
-                    # Extract the arguments the AI decided to use
                     function_args = json.loads(tool_call.function.arguments)
-                    
-                    # Execute our actual Python function imported from database.py
                     tool_data = get_student_academic_data(
                         student_name=function_args.get("student_name")
                     )
                     
-                    # Add the raw data back to memory as a "tool" message
                     st.session_state.chat_history.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "name": tool_call.function.name,
-                        "content": json.dumps(tool_data) # Send data as text
+                        "content": json.dumps(tool_data)
+                    })
+                
+                # --- TOOL 2: RAG KNOWLEDGE BASE ---
+                elif tool_call.function.name == "search_course_material":
+                    function_args = json.loads(tool_call.function.arguments)
+                    tool_data = search_course_material(
+                        query=function_args.get("query")
+                    )
+                    
+                    st.session_state.chat_history.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "content": tool_data 
                     })
             
             # 2nd Call to OpenAI: Give it the raw data so it can write a nice message

@@ -41,5 +41,21 @@ tools = [
                 "required": ["student_name"],
             },
         }
+    },{
+        "type": "function",
+        "function": {
+            "name": "search_course_material",
+            "description": "Searches the SETUP_GUIDE 3 document for specific instructions, concepts, and syllabus details. Use this whenever the student asks a question about what they are studying, how to set something up, or queries related to the course material.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The specific topic or question to search for in the guide."
+                    }
+                },
+                "required": ["query"],
+            },
+        }
     }
 ]
