@@ -1,6 +1,6 @@
 import streamlit as st
 import json
-
+import time
 
 # Import logic from our custom modules
 from database import get_all_student_names, get_student_academic_data
@@ -33,6 +33,7 @@ with st.sidebar:
                 # Delete the chat history to clear the screen
                 del st.session_state.chat_history 
                 st.success("Session saved successfully!")
+                time.sleep(2)
                 st.rerun() # Refresh the app
       
 st.title("🎓 Success Coach AI")

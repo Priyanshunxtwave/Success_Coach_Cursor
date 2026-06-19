@@ -4,9 +4,7 @@ from mem0 import MemoryClient
 from openai import OpenAI
 from dotenv import load_dotenv
 
-
 load_dotenv()
-
 
 def get_mem0_key():
    try:
@@ -16,7 +14,6 @@ def get_mem0_key():
        pass
    return os.getenv("MEM0_API_KEY")
 
-
 def get_openai_key():
    try:
        if "OPENAI_API_KEY" in st.secrets:
@@ -25,14 +22,12 @@ def get_openai_key():
        pass
    return os.getenv("OPENAI_API_KEY")
 
-
-# Initialize Clients
-mem0_client = MemoryClient(api_key=get_mem0_key())
-llm_client = OpenAI(api_key=get_openai_key())
-
-
 def save_full_session(student_name, chat_history):
     """Processes an entire session's chat history and saves facts and a single summary."""
+    # FIX 1: Clients are initialized inside the function to prevent Cloud crashes
+    mem0_client = MemoryClient(api_key=get_mem0_key())
+    llm_client = OpenAI(api_key=get_openai_key())
+    
     try:
         # 1. Build a clean transcript from the chat history
         transcript = ""
@@ -64,11 +59,10 @@ def save_full_session(student_name, chat_history):
         fact_content = fact_res.choices[0].message.content.strip()
 
         if fact_content and "NONE" not in fact_content.upper():
-            # FIXED: Passed user_id directly instead of inside filters
-            mem0_client.add([{"role": "assistant", "content": fact_content}], user_id=f"{student_name}_facts")
+            # FIX 2: Changed "assistant" to "user" so Mem0 actually saves it permanently
+            mem0_client.add([{"role": "user", "content": fact_content}], user_id=f"{student_name}_facts")
             print(f"Saved Session Facts: {fact_content}")
 
-        # 3. PROCESS SESSION SUMMARY (Whole session context)
         # 3. PROCESS SESSION SUMMARY (Whole session context)
         summary_prompt = f"""Review this entire coaching session transcript. Summarize what concrete topics were discussed and what was decided or advised in 1-2 short sentences.
 
@@ -80,16 +74,18 @@ Transcript:
         )
         summary_content = summary_res.choices[0].message.content.strip()
 
-        # FIXED: Passed user_id directly instead of inside filters
-        mem0_client.add([{"role": "assistant", "content": summary_content}], user_id=f"{student_name}_summaries")
+        # FIX 2: Changed "assistant" to "user" so Mem0 actually saves it permanently
+        mem0_client.add([{"role": "user", "content": summary_content}], user_id=f"{student_name}_summaries")
         print(f"Saved Session Summary: {summary_content}")
 
     except Exception as e:
         print(f"Memory processing failed: {e}")
 
-
 def get_student_history(student_name):
     """Retrieves both factual profile data and past session briefings separately."""
+    # FIX 1: Client initialized inside the function to prevent Cloud crashes
+    mem0_client = MemoryClient(api_key=get_mem0_key())
+    
     try:
         # 1. Fetch Factual Profile
         fact_response = mem0_client.get_all(filters={"user_id": f"{student_name}_facts"})
