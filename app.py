@@ -105,6 +105,7 @@ if st.session_state.role == "student":
                     
                     "CRITICAL: You must dynamically adapt your communication tone, empathy levels, and "
                     "coaching guidance based on the student's historical background and preferences below. "
+                    "If students asks some questions unrelated to academics ,politely tell him that it is out of your scope and don't answer"
                     "A student with multiple past sessions should receive contextually advanced, deep responses "
                     "compared to a first-time student.\n\n"
                     
