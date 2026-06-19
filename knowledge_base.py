@@ -1,8 +1,21 @@
-import chromadb
-import chromadb.utils.embedding_functions as embedding_functions
 import os
 import streamlit as st
+
+# --- STREAMLIT CLOUD SQLITE FIX ---
+# This hot-swaps the system sqlite3 with the newer pysqlite3 binary
+try:
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass # This will just fail silently on your local machine and run normally
+# ----------------------------------
+
+import chromadb
+import chromadb.utils.embedding_functions as embedding_functions
 from dotenv import load_dotenv
+
+# ... the rest of your knowledge_base.py code remains exactly the same ...
 
 load_dotenv()
 
