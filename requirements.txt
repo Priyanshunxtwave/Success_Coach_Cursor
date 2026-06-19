@@ -57,3 +57,4 @@ google-auth-httplib2
 google-auth-oauthlib
 chromadb
 pysqlite3-binary
+protobuf==3.20.3
