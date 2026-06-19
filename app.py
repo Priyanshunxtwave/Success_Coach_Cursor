@@ -1,3 +1,18 @@
+
+
+import os
+import os
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
+import streamlit as st
+import json
+
+# Import logic from our custom modules
+from database import get_all_student_names, get_student_academic_data
+from ai_coach import client, tools
+from knowledge_base import search_course_material
+
+# ... (the rest of your app.py stays exactly the same) ...
 import streamlit as st
 import json
 
