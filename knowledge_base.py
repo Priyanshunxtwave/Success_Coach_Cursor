@@ -76,7 +76,7 @@ def search_course_material(query):
     )
     
     if not results['documents'][0]:
-        return "No relevant information found in the setup guide."
+        return "No relevant information found in this guide."
         
     # Combine the top results into a single string
     retrieved_context = "\n\n".join(results['documents'][0])
