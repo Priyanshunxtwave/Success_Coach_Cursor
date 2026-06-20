@@ -3,18 +3,28 @@ import streamlit as st
 from dotenv import load_dotenv
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-
-# Load environment variables
-
 load_dotenv()
+# Load environment variables
+# Load the Calendar ID from the environment
+CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID")
+
+
+
 
 # ==========================================
 # GOOGLE SHEETS DATABASE TOOLS
 # ==========================================
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-
+# Update the SCOPES list at the top of database.py
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/calendar.events"
+]
 from datetime import datetime
-
+def get_calendar_service():
+    """Initializes and returns the Google Calendar API service connection."""
+    creds = get_google_creds()
+    return build("calendar", "v3", credentials=creds)
 def add_signal_to_db(student_name, signal_type, severity, urgency, reason):
     """Appends a new signal to the signal_sheet in Google Sheets."""
     try:
@@ -115,3 +125,70 @@ def get_student_academic_data(student_name):
         "attendance": attendance_data,
         "upcoming_schedule": schedule_data
     }
+
+def fetch_pending_signals():
+    """Fetches all rows from signal_sheet where actioned is FALSE, along with their row indexes."""
+    try:
+        service = get_sheets_service()
+        
+        # Fetch the entire sheet data (adjust range A:G depending on your columns)
+        # Assuming columns: student_name | signal_type | severity | urgency | reason | timestamp | actioned
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range="signal_sheet!A:G"
+        ).execute()
+        
+        rows = result.get('values', [])
+        if not rows or len(rows) <= 1:
+            return []
+            
+        headers = rows[0]
+        pending_signals = []
+        
+        # Loop through the data rows starting from index 1 (skipping header)
+        for idx, row in enumerate(rows[1:], start=2): # start=2 matches actual Google Sheet row numbers
+            # Pad the row with empty strings if it has missing tail columns
+            padded_row = row + [''] * (len(headers) - len(row))
+            row_dict = dict(zip(headers, padded_row))
+            
+            # Filter for items not yet handled
+            if row_dict.get('actioned', '').strip().upper() == "FALSE":
+                # Save the row number so we can easily flip it to TRUE later
+                row_dict['sheet_row_index'] = idx
+                pending_signals.append(row_dict)
+                
+        return pending_signals
+    except Exception as e:
+        print(f"Error fetching pending signals: {e}")
+        return []
+def mark_signals_actioned(row_indexes):
+    """Updates the 'actioned' column (Column G) to TRUE for the given row indexes."""
+    if not row_indexes: 
+        return
+        
+    try:
+        service = get_sheets_service()
+        
+        # Build a batch update payload for Google Sheets
+        data = []
+        for row_idx in row_indexes:
+            data.append({
+                'range': f"signal_sheet!G{row_idx}", # Assuming Column G is 'actioned'
+                'values': [["TRUE"]]
+            })
+        
+        body = {
+            'valueInputOption': 'USER_ENTERED',
+            'data': data
+        }
+        
+        # Execute the batch update
+        result = service.spreadsheets().values().batchUpdate(
+            spreadsheetId=SPREADSHEET_ID,
+            body=body
+        ).execute()
+        
+        print(f"Successfully marked {result.get('totalUpdatedCells')} signals as actioned.")
+        
+    except Exception as e:
+        print(f"Error updating actioned status: {e}")
