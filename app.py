@@ -9,7 +9,8 @@ from database import get_all_student_names, get_student_academic_data
 from ai_coach import client, tools
 from knowledge_base import search_course_material
 from memory_manager import save_full_session, get_student_history
-
+from database import get_all_student_names # Ensure you have this helper in database.py
+from coach_briefing import generate_student_brief
 st.set_page_config(page_title="Success Coach AI", page_icon="🎓")
 
 # ==========================================
@@ -105,6 +106,39 @@ if st.session_state.role == "coach":
                             
                 else:
                     st.error("Failed to sync with Google Calendar. Check your API credentials.")
+
+    # ==========================================
+    # M8: PRE-MEETING BRIEF GENERATOR
+    # ==========================================
+    st.divider()
+    st.header("📋 Pre-Meeting Student Brief")
+    
+    # Fetch all students to populate the dropdown
+    all_students = get_all_student_names() 
+    
+    if all_students:
+        # Layout with columns for a cleaner interface
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            selected_student = st.selectbox("Select a student to brief:", all_students)
+            
+        with col2:
+            # Align the button to the bottom of the column
+            st.write("") 
+            st.write("")
+            generate_brief_btn = st.button("Generate Brief", type="secondary", use_container_width=True)
+
+        # Trigger the LangChain engine when clicked
+        if generate_brief_btn and selected_student:
+            with st.spinner(f"Synthesizing memories and academic records for {selected_student}..."):
+                student_brief = generate_student_brief(selected_student)
+                
+                # Display the beautifully formatted Markdown in an expander container
+                with st.container(border=True):
+                    st.markdown(student_brief)
+    else:
+        st.info("No students found in the database to brief.")
 
     st.divider()
     if st.button("Log Out"):

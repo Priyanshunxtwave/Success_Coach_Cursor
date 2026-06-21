@@ -100,10 +100,28 @@ def fetch_tab_data(service, tab_name, range_span="A1:F100"):
 
 @st.cache_data(ttl=600) # Cache this so it doesn't slow down the app on every reload
 def get_all_student_names():
-    """Fetches just the names for the Streamlit dropdown menu."""
-    service = get_sheets_service()
-    roster = fetch_tab_data(service, 'roster')
-    return [student['name'] for student in roster if 'name' in student]
+    """Fetches a list of all unique student names from the roster."""
+    try:
+        service = get_sheets_service()
+        
+        # Pointing to the 'roster' tab where the names live
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range="roster!A:B" 
+        ).execute()
+        
+        rows = result.get('values', [])
+        if not rows or len(rows) <= 1:
+            return []
+            
+        # Extract names from Column B (index 1)
+        names = [row[1] for row in rows[1:] if len(row) > 1 and row[1].strip() != ""]
+        
+        return sorted(list(set(names)))
+        
+    except Exception as e:
+        print(f"Error fetching student names: {e}")
+        return []
 
 def get_student_academic_data(student_name):
     """This is the tool the AI will call to fetch the data."""
