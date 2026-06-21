@@ -4,98 +4,88 @@ from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
-from database import fetch_pending_signals
 from memory_manager import get_openai_key
+from database import fetch_pending_signals
+
 load_dotenv()
 
 # ==========================================
-# 1. DEFINE STRUCURED OUTPUT SCHEMAS (Pydantic)
+# 1. M9 SCHEMAS (Strict Formatting)
 # ==========================================
 class ScheduledSlot(BaseModel):
-    student_name: str = Field(description="Full name of the student being scheduled.")
-    start_time: str = Field(description="Start time in 24-hour HH:MM format (e.g., 09:30).")
-    end_time: str = Field(description="End time in 24-hour HH:MM format (e.g., 10:30).")
-    session_type: str = Field(description="Category: Academic Review, Mental Health Check, or Attendance Intervention.")
-    reason: str = Field(description="A concise description of why this student requires attention today.")
+    student_name: str = Field(description="Full name of the student.")
+    start_time: str = Field(description="Start time (e.g., 09:00). Must be unique.")
+    end_time: str = Field(description="End time (e.g., 10:00).")
+    session_type: str = Field(description="Category of session.")
+    reason: str = Field(description="Why this student requires attention today.")
 
 class DeferredSlot(BaseModel):
-    student_name: str = Field(description="Full name of the student who could not fit into today's schedule.")
-    reason: str = Field(description="Detailed reason explaining why they were deferred to tomorrow.")
+    student_name: str = Field(description="Student bumped/deferred to tomorrow.")
+    reason: str = Field(description="Clear reason explaining why they were bumped (e.g., replaced by a critical incident).")
+
+class ConflictDetails(BaseModel):
+    has_conflict: bool = Field(description="TRUE ONLY if all slots are full and multiple Critical students are competing for the same spot.")
+    competing_students: List[str] = Field(description="Names of the students in conflict.", default=[])
+    tradeoff_explanation: str = Field(description="Clear explanation of the tradeoff for the coach.", default="")
 
 class DailyItinerary(BaseModel):
-    scheduled_today: List[ScheduledSlot] = Field(description="List of students successfully scheduled within the 8-hour workday.")
-    deferred_tomorrow: List[DeferredSlot] = Field(description="List of students deferred due to time constraints.")
+    scheduled_today: List[ScheduledSlot] = Field(description="List of scheduled students. NO OVERLAPPING TIMES.")
+    deferred_tomorrow: List[DeferredSlot] = Field(description="List of bumped/deferred students.")
+    changes_summary: str = Field(description="A brief summary of who was added, moved, or bumped to accommodate the current queue.")
+    conflict: ConflictDetails = Field(description="Details regarding any unresolvable critical conflicts.")
 
 
 # ==========================================
-# 2. CORE SCHEDULER FUNCTION
+# 2. CORE REPLANNING FUNCTION
 # ==========================================
-def generate_daily_schedule():
-    """Fetches pending signals and uses LangChain to generate a structured 8-hour workday itinerary."""
-    # Fetch un-actioned signals from the database
+def generate_daily_schedule(coach_override: str = None):
+    """Generates the schedule, handles dynamic bumping, and detects conflicts."""
     signals = fetch_pending_signals()
-    
     if not signals:
-        print("No pending student signals found today.")
         return None, []
 
-    # Format the raw database signals into a clear block of text for the prompt
     signals_context = ""
     for s in signals:
-        # Using .get() prevents future KeyErrors and we use 'student_id' to match your sheet
         student_identifier = s.get('student_id', s.get('student_name', 'Unknown'))
-        
         signals_context += (
-            f"- Student: {student_identifier} | Type: {s.get('signal_type', 'None')} | "
-            f"Severity: {s.get('severity', 'None')} | Urgency: {s.get('urgency', 'None')} | Reason: {s.get('reason', 'None')}\n"
+            f"- Student: {student_identifier} | Type: {s.get('signal_type')} | "
+            f"Severity: {s.get('severity')} | Reason: {s.get('reason')}\n"
         )
 
-    # Initialize the LangChain ChatOpenAI wrapper
-    # It leverages your existing key retrieval helper function
-    llm = ChatOpenAI(
-        model="gpt-5.4-mini-2026-03-17", 
-        api_key=get_openai_key(),
-        temperature=0.1
-    )
+    # Force the AI to obey the coach's manual tie-breaker
+    if coach_override:
+        signals_context += f"\n*** SYSTEM OVERRIDE: {coach_override} MUST be scheduled today. Resolve conflict accordingly. ***"
 
-    # Enforce strict structured output matching our Pydantic schema
+    llm = ChatOpenAI(model="gpt-5.4-mini-2026-03-17", api_key=get_openai_key(), temperature=0.0) # Temp 0.0 for strict math
     structured_llm = llm.with_structured_output(DailyItinerary)
 
-    # Create the LangChain Prompt Template
+    SYSTEM_PROMPT = """You are an elite, autonomous Student Success scheduling agent.
+Your job is to read the queue of pending student signals and pack them into a strict workday.
+
+M9 STRICT SCHEDULING RULES:
+1. Available Slots: You only have exactly 6 slots (09:00, 10:00, 11:00, 13:00, 14:00, 15:00).
+2. NO DOUBLE BOOKING: You may NEVER assign two students to the same start_time.
+3. REPLANNING & BUMPING: Rank students by Severity (Critical > High > Medium). Fill the slots top-down. If you run out of slots, you MUST bump the remaining lower-priority students to the 'deferred_tomorrow' list.
+
+M9 CONFLICT RESOLUTION:
+If the schedule is completely full of 'High' or 'Critical' students, and a NEW 'Critical' student needs a slot, causing a tie where you cannot fit them all:
+- DO NOT randomly guess.
+- Set 'has_conflict' to True.
+- List the names in 'competing_students'.
+- Explain the exact tradeoff in 'tradeoff_explanation' so the human coach can make the manual call.
+- Leave the disputed slot empty."""
+
     prompt_template = ChatPromptTemplate.from_messages([
-        ("system", """You are an elite administrative assistant coordinating a Student Success Coach's daily schedule.
-Your goal is to organize an 8-hour workday itinerary (strictly from 09:00 AM to 05:00 PM) based on incoming high-priority student alert signals.
-
-Scheduling Constraints:
-. You must assign each student to one of these exact, non-overlapping sequential time slots:
-   - Slot 1: 09:00 to 10:00
-   - Slot 2: 10:00 to 11:00
-   - Slot 3: 11:00 to 12:00
-   - Slot 4: 13:00 to 14:00
-   - Slot 5: 14:00 to 15:00
-   - Slot 6: 15:00 to 16:00
-   - Slot 7: 16:00 to 17:00
-. NEVER assign two students to the same time slot.
-1. Prioritize 'Critical' and 'High' severity items first, followed by 'Medium'. Completely ignore 'Low' severity.
-2. Prioritize 'Action Today' over 'Action Tomorrow'.
-3. Assign session durations based on severity: 'Critical' or 'High' gets a 60-minute slot. 'Medium' gets a 30-minute slot.
-4. Do not allow overlapping time slots under any circumstances.
-5. If the schedule fills up completely between 09:00 AM and 05:00 PM, any remaining students MUST be placed into the 'deferred_tomorrow' list with an explanation."""),
-        ("user", "Current Pending Signals:\n{incoming_signals}")
-
+        ("system", SYSTEM_PROMPT),
+        ("user", "Current Pending Signals Queue:\n{incoming_signals}")
     ])
 
-    # Construct the LangChain executable pipeline (LCEL syntax)
     chain = prompt_template | structured_llm
 
     try:
-        # Run the chain to get a strongly-typed Pydantic object back
         itinerary_object = chain.invoke({"incoming_signals": signals_context})
-        
-        # Convert the Pydantic object directly into a standard Python dict for the calendar manager
         schedule_data = itinerary_object.model_dump()
         return schedule_data, signals
-        
     except Exception as e:
-        print(f"Error generating schedule via LangChain: {e}")
+        print(f"Error generating schedule: {e}")
         return None, []

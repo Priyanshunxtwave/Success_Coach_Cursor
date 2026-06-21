@@ -1,6 +1,7 @@
 import time
 import streamlit as st
 import json
+import os
 # Add these to your existing imports at the top of app.py
 from database import mark_signals_actioned
 from coach_scheduler import generate_daily_schedule
@@ -59,40 +60,81 @@ if not st.session_state.logged_in:
 # ==========================================
 # ==========================================
 # COACH DASHBOARD (M7 Complete)
-# ==========================================
+
+# ... existing code ...
+
 if st.session_state.role == "coach":
     st.title("👨‍🏫 Coach Dashboard")
     st.write("Welcome to your daily command center.")
     
-    # The M7 Trigger Button
-    if st.button("📅 Generate Daily Action Plan", type="primary"):
-        with st.spinner("Analyzing signals and building schedule..."):
+    # ==========================================
+    # M9: PERSISTENT SUMMARY ON LOGIN
+    # ==========================================
+    SUMMARY_FILE = "latest_plan_summary.txt"
+    if os.path.exists(SUMMARY_FILE):
+        with open(SUMMARY_FILE, "r") as f:
+            saved_summary = f.read()
+        if saved_summary.strip():
+            st.info(f"**🔔 Latest System Adjustments:** {saved_summary}")
+
+    # ==========================================
+    # M9: THE SCHEDULING ENGINE
+    # ==========================================
+    if st.button("📅 Run Autonomous Replanner", type="primary"):
+        with st.spinner("Analyzing signals and replanning schedule..."):
             
-            # 1. Ask LangChain to build the itinerary
-            schedule_data, raw_signals = generate_daily_schedule()
+            override = st.session_state.get("conflict_winner", None)
+            schedule_data, raw_signals = generate_daily_schedule(coach_override=override)
             
             if not schedule_data:
-                st.info("No critical student signals require attention today! Enjoy your day.")
+                st.info("No critical student signals require attention today.")
             else:
-                # 2. Push to Google Calendar
+                # 1. Check for Conflicts first
+                conflict_info = schedule_data.get("conflict", {})
+                
+                if conflict_info.get("has_conflict") and not override:
+                    st.error("⚠️ CRITICAL SCHEDULING CONFLICT DETECTED")
+                    st.warning(f"**System Halted. Tradeoff Required:** {conflict_info.get('tradeoff_explanation')}")
+                    
+                    competing = conflict_info.get("competing_students", [])
+                    if len(competing) >= 2:
+                        st.write("**You must make the manual call. Who gets the final slot today?**")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button(f"Prioritize {competing[0]}", use_container_width=True):
+                                st.session_state.conflict_winner = competing[0]
+                                st.rerun()
+                        with col2:
+                            if st.button(f"Prioritize {competing[1]}", use_container_width=True):
+                                st.session_state.conflict_winner = competing[1]
+                                st.rerun()
+                    st.stop() # Halts app until coach decides
+                
+                # 2. Proceed with booking if no conflicts (or if conflict resolved)
+                if "conflict_winner" in st.session_state:
+                    del st.session_state["conflict_winner"]
+
                 calendar_success = push_schedule_to_calendar(schedule_data)
                 
                 if calendar_success:
                     st.success("✅ Schedule successfully pushed to Google Calendar!")
                     
-                    # 3. Figure out which rows we need to mark as "actioned"
-                    # We map the scheduled student names back to their original sheet row indexes
+                    # Write the summary to the local file for the next login
+                    summary_text = schedule_data.get('changes_summary', 'No major changes.')
+                    with open(SUMMARY_FILE, "w") as f:
+                        f.write(summary_text)
+                    
+                    st.info(f"**Plan Updates:** {summary_text}")
+                    
+                    # Update database
                     scheduled_names = [slot["student_name"] for slot in schedule_data.get("scheduled_today", [])]
                     rows_to_update = [
                         signal["sheet_row_index"] for signal in raw_signals 
-                        # Use .get() to safely check 'student_id' first, matching your Google Sheet
                         if signal.get("student_id", signal.get("student_name")) in scheduled_names
                     ]
-                    
-                    # 4. Update the database
                     mark_signals_actioned(rows_to_update)
                     
-                    # 5. Display the beautiful UI to the Coach
+                    # Render UI
                     st.subheader("🗓️ Today's Itinerary")
                     for slot in schedule_data.get("scheduled_today", []):
                         with st.expander(f"{slot['start_time']} - {slot['end_time']} | {slot['student_name']}"):
@@ -103,11 +145,6 @@ if st.session_state.role == "coach":
                         st.subheader("⏭️ Deferred to Tomorrow")
                         for deferred in schedule_data["deferred_tomorrow"]:
                             st.warning(f"**{deferred['student_name']}**: {deferred['reason']}")
-                            
-                else:
-                    st.error("Failed to sync with Google Calendar. Check your API credentials.")
-
-    # ==========================================
     # M8: PRE-MEETING BRIEF GENERATOR
     # ==========================================
     st.divider()
